@@ -1,0 +1,92 @@
+@prefix pw: <https://example.org/dita-wf/project#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix wf: <https://example.org/dita-wf#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+pw:ev200-install-ko a pw:ProjectWorkflow ;
+    rdfs:label "ev200-install-ko" ;
+    pw:approvedBy "[user1]" ;
+    pw:approvedOn "2026-11-04"^^xsd:date ;
+    pw:basedOn wf:DitaDraftWorkflow ;
+    pw:baseline "v3" ;
+    pw:hasStepSelection [ a pw:StepSelection ;
+            wf:stepNumber 8 ;
+            pw:included true ;
+            pw:step wf:step08 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 2 ;
+            pw:included true ;
+            pw:step wf:step02 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 14 ;
+            pw:included true ;
+            pw:step wf:step14 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 15 ;
+            pw:included true ;
+            pw:step wf:step15 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 16 ;
+            pw:included true ;
+            pw:step wf:step16 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 9 ;
+            pw:included true ;
+            pw:step wf:step09 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 10 ;
+            pw:included true ;
+            pw:step wf:step10 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 19 ;
+            pw:included true ;
+            pw:step wf:step19 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 13 ;
+            pw:included true ;
+            pw:step wf:step13 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 4 ;
+            pw:included true ;
+            pw:step wf:step04 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 7 ;
+            pw:included true ;
+            pw:step wf:step07 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 6 ;
+            pw:included true ;
+            pw:step wf:step06 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 11 ;
+            pw:included true ;
+            pw:step wf:step11 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 18 ;
+            pw:included true ;
+            pw:step wf:step18 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 1 ;
+            pw:included true ;
+            pw:step wf:step01 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 5 ;
+            pw:included true ;
+            pw:step wf:step05 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 3 ;
+            pw:included true ;
+            pw:step wf:step03 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 17 ;
+            pw:included true ;
+            pw:step wf:step17 ],
+        [ a pw:StepSelection ;
+            wf:stepNumber 12 ;
+            pw:included true ;
+            pw:step wf:step12 ] ;
+    pw:manualType wf:mt_installation ;
+    pw:ontologySha256 "1f6949fe4bbfd5bdc7883ba4c7908e94fb1e0a96c2cdc438d2a29166005ec0aa" ;
+    pw:securityLevel "public" ;
+    pw:specTransmissionAllowed true .
+

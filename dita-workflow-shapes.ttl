@@ -1,0 +1,124 @@
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix wf:     <https://example.org/dita-wf#> .
+@prefix p-plan: <http://purl.org/net/p-plan#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# =====================================================================
+#  워크플로우 정의 검증 규칙 (SHACL, 닫힌 세계 가정)
+#  OWL 온톨로지는 "무엇이 있는가"를 기술하고, 이 파일은 "빠지면 안 되는 것"을 검사한다.
+# =====================================================================
+
+wf:prefixes sh:declare
+    [ sh:prefix "wf" ;     sh:namespace "https://example.org/dita-wf#"^^xsd:anyURI ] ,
+    [ sh:prefix "p-plan" ; sh:namespace "http://purl.org/net/p-plan#"^^xsd:anyURI ] ,
+    [ sh:prefix "rdfs" ;   sh:namespace "http://www.w3.org/2000/01/rdf-schema#"^^xsd:anyURI ] .
+
+# R1. 모든 단계: 순서 번호·수행 주체·산출물·외부 전송 여부가 명시되어야 함
+wf:StepShape a sh:NodeShape ;
+    sh:targetClass wf:Step ;
+    sh:property [ sh:path wf:stepNumber ; sh:datatype xsd:integer ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:message "R1: 단계 번호가 없거나 둘 이상입니다." ] ;
+    sh:property [ sh:path wf:performedBy ; sh:minCount 1 ;
+                  sh:message "R1: 수행 주체(사람·LLM·스크립트)가 지정되지 않았습니다." ] ;
+    sh:property [ sh:path p-plan:hasOutputVar ; sh:minCount 1 ;
+                  sh:message "R1: 출력물이 정의되지 않았습니다." ] ;
+    sh:property [ sh:path wf:sendsToExternalLLM ; sh:datatype xsd:boolean ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:message "R1: LLM API 외부 전송 여부(true/false)가 명시되지 않았습니다. '없음'도 false로 기록해야 합니다." ] .
+
+# R2. 모든 입력 자료는 앞 단계의 출력이거나, 근거 자료·템플릿·도구·외부 표준이어야 함
+wf:InputProvenanceShape a sh:NodeShape ;
+    sh:targetClass wf:Step ;
+    sh:sparql [
+        sh:prefixes wf:prefixes ;
+        sh:message "R2: 입력 자료 '{?label}'을(를) 출력하는 단계가 없습니다." ;
+        sh:select """
+            SELECT $this ?value ?label WHERE {
+                $this p-plan:hasInputVar ?value .
+                ?value rdfs:label ?label .
+                FILTER NOT EXISTS { ?anyStep p-plan:hasOutputVar ?value }
+                FILTER NOT EXISTS { ?value wf:aliasOf/^p-plan:hasOutputVar ?producer }
+                FILTER NOT EXISTS { ?value a ?c . FILTER (?c IN (wf:SourceMaterial, wf:Template, wf:Tool, wf:LLMSkill, wf:ExternalStandard)) }
+            }""" ] .
+
+# R3. 산출물은 다른 단계에서 사용되어야 함 (최종 출력물 제외) — 경고
+wf:OutputConsumedShape a sh:NodeShape ;
+    sh:severity sh:Warning ;
+    sh:targetClass wf:Step ;
+    sh:sparql [
+        sh:prefixes wf:prefixes ;
+        sh:message "R3: 산출물 '{?label}'을(를) 입력으로 사용하는 단계가 없습니다." ;
+        sh:select """
+            SELECT $this ?value ?label WHERE {
+                $this p-plan:hasOutputVar ?value .
+                ?value rdfs:label ?label .
+                FILTER NOT EXISTS { ?value a wf:FinalDeliverable }
+                FILTER NOT EXISTS { ?s p-plan:hasInputVar ?value }
+                FILTER NOT EXISTS { ?s p-plan:hasInputVar/wf:aliasOf ?value }
+            }""" ] .
+
+# R4. 승인 단계에는 '승인' 전이와 '반려' 계열 전이가 모두 있어야 함
+wf:ApprovalBranchShape a sh:NodeShape ;
+    sh:targetClass wf:ApprovalStep ;
+    sh:sparql [
+        sh:prefixes wf:prefixes ;
+        sh:message "R4: 승인 단계에 승인 또는 반려 전이가 빠져 있습니다." ;
+        sh:select """
+            SELECT $this WHERE {
+                FILTER ( NOT EXISTS { ?t wf:fromStep $this ; wf:onCondition wf:Approved }
+                      || NOT EXISTS { ?t2 wf:fromStep $this ; wf:onCondition/a wf:RejectionCondition } )
+            }""" ] .
+
+# R5. 보안 통제 자료(사양서)의 외부 전송에는 반드시 '보안 등급 허용 시' 조건이 붙어야 함
+wf:SecureTransmissionShape a sh:NodeShape ;
+    sh:targetClass wf:ExternalTransmission ;
+    sh:sparql [
+        sh:prefixes wf:prefixes ;
+        sh:message "R5: 보안 통제 자료를 조건 없이 외부 LLM으로 전송합니다." ;
+        sh:select """
+            SELECT $this WHERE {
+                $this wf:transmits ?a . ?a wf:securityControlled true .
+                FILTER NOT EXISTS { $this wf:conditionalOn wf:SecurityClearance }
+            }""" ] .
+
+# R6. 외부 전송이 있는 단계는 LLM 주체·LLM 스킬·선택적 LLM 사용 중 하나가 있어야 하고, 그 반대도 성립해야 함
+wf:TransmissionConsistencyShape a sh:NodeShape ;
+    sh:targetClass wf:Step ;
+    sh:sparql [
+        sh:prefixes wf:prefixes ;
+        sh:message "R6: LLM 사용 여부와 외부 전송 기록이 서로 맞지 않습니다." ;
+        sh:select """
+            SELECT $this WHERE {
+                BIND ( EXISTS { $this wf:performedBy/a wf:LLMAgent }
+                    || EXISTS { $this wf:usesResource/a wf:LLMSkill }
+                    || EXISTS { $this wf:optionalLLMUse true } AS ?usesLLM )
+                $this wf:sendsToExternalLLM ?sends .
+                FILTER ( ?usesLLM != ?sends )
+            }""" ] .
+
+# R7. 되돌아가는 전이는 반려 조건이거나, 사람이 판단하는 단계에서 출발·도착하거나, 반복 규칙(상한 있음)의 통제를 받아야 함 — 무한 자동 루프 방지
+wf:BackEdgeShape a sh:NodeShape ;
+    sh:targetClass wf:Transition ;
+    sh:sparql [
+        sh:prefixes wf:prefixes ;
+        sh:message "R7: 반복 상한이나 사람 판단 없이 이전 단계로 되돌아갑니다." ;
+        sh:select """
+            SELECT $this WHERE {
+                $this wf:fromStep/wf:stepNumber ?f ; wf:toStep/wf:stepNumber ?t .
+                FILTER ( ?t <= ?f )
+                FILTER NOT EXISTS { $this wf:onCondition/a wf:RejectionCondition }
+                FILTER NOT EXISTS { $this (wf:fromStep|wf:toStep)/wf:performedBy/a wf:Human }
+                FILTER NOT EXISTS { $this wf:governedBy/wf:maxIterations ?m }
+            }""" ] .
+
+# R8. '작성 필요' 리소스에 의존하는 단계 — 실행 전 준비 필요 (정보)
+wf:ResourceReadinessShape a sh:NodeShape ;
+    sh:severity sh:Info ;
+    sh:targetClass wf:Step ;
+    sh:sparql [
+        sh:prefixes wf:prefixes ;
+        sh:message "R8: 필요한 리소스 '{?label}'이(가) 아직 작성되지 않았습니다." ;
+        sh:select """
+            SELECT $this ?value ?label WHERE {
+                $this wf:usesResource ?value . ?value wf:availability wf:ToBeCreated ; rdfs:label ?label .
+            }""" ] .

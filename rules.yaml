@@ -1,0 +1,47 @@
+# T19 규칙 목록 — 13번 DITA 규칙 검증 (원본)
+#
+# 사람은 이 파일만 고친다. rules.sch는 scripts/build_schematron.py가 이 파일에서 생성한다.
+# rules.sch를 직접 고치지 않는다 (v3 '파일 포맷 기준': YAML 원본 → Schematron 생성).
+#
+# 처리기: lxml isoschematron (ISO Schematron, XSLT 1.0 바인딩)
+#   - XSLT 1.0이라 ends-with() 같은 XPath 2.0 함수는 쓸 수 없다.
+#   - 맵에서 토픽을 읽을 때는 document(파일, .)을 쓴다. 두 번째 인자(.)로 맵 기준 상대 경로를 푼다.
+# 메시지 안의 {{XPath}}는 <sch:value-of select="XPath"/>로 바뀐다.
+# severity는 SVRL의 role로 나가고, run_rules.py가 T32 리포트의 severity(error·warning·info)로 옮긴다.
+
+schema_version: "1"
+query_binding: "xslt"
+
+rules:
+  - id: "R13-001"
+    title: "맵 navtitle = 토픽 title"
+    target: "ditamap"
+    basis: "@locktitle 정책 D2′ (사용자 결정 2026-11-04). 잠그지 않고, 8번 sync_titles.py가 토픽 title을 맵 navtitle로 채운다. 이 규칙은 그 뒤에 어긋난 것을 잡는다."
+    # 맵 안에서 .dita를 가리키고 navtitle이 있는 모든 참조 (chapter·appendix·preface·topicref 등)
+    context: "*[@href][topicmeta/navtitle][not(@scope = 'external')][not(@format) or @format = 'dita'][not(contains(@href, '.ditamap'))]"
+    lets:
+      file: "substring-before(concat(@href, '#'), '#')"
+      topic: "document($file, .)/*"
+      nav: "normalize-space(string(topicmeta/navtitle))"
+      ttl: "normalize-space(string($topic/title[1]))"
+    checks:
+      - id: "R13-001"
+        kind: "assert"
+        severity: "error"
+        test: "not($topic) or @locktitle = 'yes' or $nav = $ttl"
+        message: "맵 navtitle과 토픽 title이 다릅니다 ({{@href}})"
+        expected: "$nav"
+        actual: "$ttl"
+        suggested_action: "사람이 9번 이후 토픽 제목을 의도적으로 고친 경우: 16번에서 '목차 변경 필요'로 판단 → 6번 수정 모드(rename)로 맵 navtitle 수정 → 7번 목차 전체 재승인 → 8번 제목 동기화(sync_titles.py)만 → 11번부터 재검증. 이 경로는 최대 2회 (사용자 결정 2026-11-04). 의도하지 않은 변경(예: 17번 수정 중 바뀜)이면 sync_titles.py로 토픽 title을 맵에 맞춘다."
+      - id: "R13-001.locked"
+        kind: "report"
+        severity: "info"
+        test: "$topic and @locktitle = 'yes' and $nav != $ttl"
+        message: "의도적 차이 (locktitle=\"yes\") — 목차에는 맵 라벨, 본문 제목에는 토픽 title이 나옵니다 ({{@href}})"
+        expected: "$nav"
+        actual: "$ttl"
+      - id: "R13-001.missing"
+        kind: "report"
+        severity: "info"
+        test: "not($topic)"
+        message: "토픽 파일을 읽을 수 없어 비교하지 않았습니다 — 14번 링크 검사 대상 ({{@href}})"

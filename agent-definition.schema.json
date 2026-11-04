@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/dita-wf/schemas/agent-definition.schema.json",
+  "title": "에이전트 정의 파일 frontmatter 스키마 (T36)",
+  "description": "Claude Code 서브에이전트 형식의 YAML frontmatter에 워크플로우 연결 항목(wf_*)을 더한 것. name·description은 Claude Code가 요구하는 필수 항목이고, wf_*는 Claude Code가 무시하고 export_agent_definitions.py만 사용한다. 출처: https://code.claude.com/docs/en/sub-agents (2026-10-30 확인)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "wf_step", "wf_agent", "wf_baseline", "wf_ontology_sha256"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z-]*[a-z]$",
+      "description": "Claude Code 필수. 소문자와 하이픈만. ':'를 쓸 수 없고 '-'로 시작할 수 없다. 온톨로지 노드 이름에서 기계적으로 만든다 (agentMapGenerator → map-generator)."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 300,
+      "description": "Claude Code 필수. 언제 이 에이전트에 맡기는지. 단계 번호를 반드시 넣어 다른 단계에서 잘못 불려 나가지 않게 한다."
+    },
+    "tools": {
+      "type": "string",
+      "description": "쉼표로 구분한 허용 도구 목록. 생략하면 상속한다. 에이전트가 쓸 도구만 적어 범위를 좁힌다."
+    },
+    "disallowedTools": { "type": "string" },
+    "model": {
+      "type": "string",
+      "description": "sonnet·opus·haiku·fable, 전체 모델 ID, 또는 inherit. 재현성을 위해 실제 실행에서는 전체 모델 ID를 권장하며, 리포트의 checker.model_id에 같은 값을 남긴다."
+    },
+    "permissionMode": {
+      "enum": ["default", "manual", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"],
+      "description": "bypassPermissions는 쓰지 않는다 (보안 설계: 권한 우회 금지)."
+    },
+    "maxTurns": { "type": "integer", "minimum": 1 },
+    "skills": { "type": ["string", "array"], "items": { "type": "string" } },
+    "memory": { "enum": ["user", "project", "local"] },
+    "effort": { "enum": ["low", "medium", "high", "xhigh", "max"] },
+    "color": { "enum": ["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"] },
+
+    "wf_step": {
+      "type": "integer", "minimum": 1, "maximum": 19,
+      "description": "이 에이전트가 수행하는 확정 워크플로우 v3 단계 번호"
+    },
+    "wf_agent": {
+      "type": "string", "pattern": "^agent[A-Za-z]+$",
+      "description": "온톨로지의 LLM 에이전트 노드 이름. 예: agentMapGenerator"
+    },
+    "wf_baseline": { "type": "string", "description": "워크플로우 판. 예: v3" },
+    "wf_ontology_sha256": {
+      "type": "string", "pattern": "^[0-9a-f]{64}$",
+      "description": "생성 블록을 만든 온톨로지의 해시. 온톨로지가 바뀌면 --check가 불일치로 잡는다."
+    },
+    "wf_placeholders": {
+      "type": "array", "items": { "type": "string", "pattern": "^\\{\\{[a-z_]+\\}\\}$" },
+      "description": "가변부 치환 표식 목록. 오케스트레이터가 실행 때 채운다. 본문에 쓴 표식과 일치해야 한다."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "permissionMode": { "const": "bypassPermissions" } }, "required": ["permissionMode"] },
+      "then": { "properties": { "permissionMode": { "const": "__금지: 권한 우회는 보안 설계에서 허용하지 않습니다__" } } }
+    }
+  ]
+}

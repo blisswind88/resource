@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/dita-wf/schemas/approved-workflow.schema.json",
+  "title": "확정 워크플로우 스키마 (T28)",
+  "description": "3번 워크플로우 승인의 산출물이자 4번 워크플로우 검증의 입력. 단계 정보의 원본은 온톨로지 dita-workflow.ttl(T03)이고 이 파일은 export_approved_workflow.py가 생성한다. 사람이 채우는 항목은 approved.approved_by, approved.approved_on, project 블록, steps[].included, steps[].exclusion_reason 뿐이며 다시 생성할 때 그대로 보존된다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "approved", "project", "steps", "transitions", "loop", "skip_rules"],
+  "properties": {
+    "schema_version": { "const": "1" },
+
+    "approved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workflow_id", "workflow_label", "baseline", "ontology_source", "generated_by", "approved_by", "approved_on"],
+      "properties": {
+        "workflow_id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "workflow_label": { "type": "string", "minLength": 1 },
+        "baseline": { "type": "string", "description": "워크플로우 판. 예: v3" },
+        "ontology_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["file", "sha256"],
+          "properties": {
+            "file": { "type": "string" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "원본 TTL의 해시. 4번 검증에서 다시 확인해 YAML이 다른 판의 온톨로지에서 나온 것을 잡는다." }
+          }
+        },
+        "generated_by": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["script", "version", "generated_at"],
+          "properties": {
+            "script": { "type": "string" },
+            "version": { "type": "string" },
+            "generated_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "approved_by": { "type": "string", "minLength": 1, "description": "사람 입력. 승인 전에는 '[TBD: 출처 필요 — 3번 승인자]'" },
+        "approved_on": { "type": ["string", "null"], "description": "사람 입력. YYYY-MM-DD. 승인 전에는 null" },
+        "approved_ontology_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$", "description": "승인 당시 온톨로지 해시. --approve가 기록한다. ontology_source.sha256과 다르면 승인 후 정의가 바뀐 것이므로 4번 P6이 3번 재승인을 요구한다 (사용자 결정 2026-11-04)" }
+      }
+    },
+
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "manual_types", "security_level", "spec_transmission_allowed"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "manual_types": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "enum": ["user", "operation", "installation", "service", "maintenance"] },
+          "description": "통합 매뉴얼은 종류를 둘 이상 적는다. 새 종류를 만들지 않는다 (결정 10)."
+        },
+        "security_level": { "enum": ["public", "internal", "confidential"] },
+        "spec_transmission_allowed": { "type": "boolean", "description": "사양서를 외부 LLM API로 보내도 되는지. false면 8·15번의 사양서 전송이 막힌다." }
+      }
+    },
+
+    "steps": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "id", "label", "type", "performed_by", "task", "inputs", "outputs", "sends_to_external_llm", "included", "requires_exclusion_reason"],
+        "properties": {
+          "number": { "type": "integer", "minimum": 1, "maximum": 19 },
+          "id": { "type": "string", "pattern": "^step[0-9]{2}$" },
+          "label": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "minLength": 1, "description": "온톨로지의 단계 분류. 예: ValidationStep" },
+          "performed_by": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["kind", "name"],
+              "properties": { "kind": { "enum": ["human", "llm", "script"] }, "name": { "type": "string" } }
+            }
+          },
+          "task": { "type": "string", "minLength": 1 },
+          "inputs": { "type": "array", "items": { "type": "string" } },
+          "outputs": { "type": "array", "items": { "type": "string" } },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["label"],
+              "properties": {
+                "label": { "type": "string" },
+                "template_id": { "type": "string" },
+                "availability": { "enum": ["있음", "샘플 (표준화 필요)", "일부", "확인 필요", "작성 필요"] }
+              }
+            }
+          },
+          "sends_to_external_llm": { "type": "boolean" },
+          "external_transmissions": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["data", "condition"],
+              "properties": { "data": { "type": "string" }, "condition": { "type": "string" } }
+            }
+          },
+          "constraints": { "type": "array", "items": { "type": "string" } },
+          "included": { "type": "boolean", "description": "사람 입력. 이 프로젝트에서 실행할 단계인지" },
+          "requires_exclusion_reason": { "type": "boolean", "description": "온톨로지 wf:requiresExclusionReason. true인 단계를 빼려면 사유가 필요하다." },
+          "exclusion_reason": { "type": ["string", "null"], "description": "사람 입력. included가 false일 때 사유" }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "included": { "const": false }, "requires_exclusion_reason": { "const": true } },
+              "required": ["included", "requires_exclusion_reason"]
+            },
+            "then": {
+              "properties": { "exclusion_reason": { "type": "string", "minLength": 5 } },
+              "required": ["exclusion_reason"]
+            }
+          }
+        ]
+      }
+    },
+
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "from", "to", "condition"],
+        "properties": {
+          "id": { "type": "string" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "condition": { "type": "string" },
+          "condition_type": { "type": "string" },
+          "counts_toward_iteration": { "type": ["boolean", "null"] },
+          "governed_by": { "type": ["string", "null"] },
+          "note": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "loop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "body", "max_iterations", "on_limit_reached"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "body": { "type": "array", "items": { "type": "integer" }, "description": "반복 구간의 단계 번호" },
+        "max_iterations": { "type": "integer", "minimum": 1 },
+        "exit_on_pass_to": { "type": ["integer", "null"] },
+        "on_errors_remain_to": { "type": ["integer", "null"] },
+        "on_limit_reached": { "type": "string" },
+        "error_counting_rule": { "type": ["string", "null"] },
+        "pass_rule": { "type": ["string", "null"] }
+      }
+    },
+
+    "skip_rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "triggered_by_failure_of", "skips", "scope"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "triggered_by_failure_of": { "type": "array", "items": { "type": "integer" } },
+          "skips": { "type": "array", "items": { "type": "integer" } },
+          "scope": { "enum": ["파일 단위", "전체 빌드"] },
+          "reason": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/dita-wf/schemas/report.schema.json",
+  "title": "검증 리포트 공통 스키마 (T32)",
+  "description": "확정 워크플로우 v3의 검증·검사 단계(4, 10, 11, 12, 13, 14, 15)가 내는 리포트와 16번이 읽는 리포트의 공통 형식. 단계마다 도구가 다르므로 rule_id·rule_source로 출처를 남기고, 본문 인용은 evidence에만 두어 마스킹 대상을 한곳에 모은다. 파일명·본문이 들어갈 수 있으므로 LLM 단계(15·17)에 넘길 때는 masking을 적용한 사본을 쓴다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "report_id", "run_id", "step", "step_label", "iteration",
+    "status", "checker", "started_at", "finished_at", "target", "summary", "findings"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+
+    "report_id": {
+      "type": "string",
+      "pattern": "^report-(0[1-9]|1[0-9])-i[0-9]{1,2}$",
+      "description": "report-<단계 2자리>-i<반복 회차>. 예: report-11-i2"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$",
+      "description": "실행 식별자. T39 실행 기록(run-manifest)과 같은 값을 쓴다. 예: 20261030T041500Z-9f2c1a7b"
+    },
+    "step": { "type": "integer", "minimum": 1, "maximum": 19 },
+    "step_label": { "type": "string", "minLength": 1 },
+    "iteration": {
+      "type": "integer", "minimum": 0, "maximum": 99,
+      "description": "0 = 최초 실행, 1~3 = 수정–재검증 반복 회차 (상한 3회, 결정 3). 16번에서 작업자가 직접 수정한 뒤의 재검증은 반복에 포함하지 않으므로 같은 회차 번호를 유지하고 direct_fix를 true로 둔다."
+    },
+    "direct_fix": {
+      "type": "boolean", "default": false,
+      "description": "true면 17번 자동 수정이 아니라 16번에서 작업자가 직접 수정한 뒤의 재검증 (wf:t16_11, countsTowardIteration=false)"
+    },
+
+    "status": {
+      "enum": ["pass", "fail", "error", "skipped"],
+      "description": "pass = 허용되지 않은 error 0건 / fail = error 1건 이상 / error = 검사 자체가 실패 (도구 오류) / skipped = 생략 규칙으로 실행하지 않음"
+    },
+
+    "checker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "version"],
+      "properties": {
+        "kind": { "enum": ["script", "llm", "llm+script"] },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1, "description": "도구 버전. 재현성 확인용 (CQ-E4)" },
+        "model_id": { "type": "string", "description": "kind가 llm 또는 llm+script일 때 사용한 모델 식별자" },
+        "prompt_id": { "type": "string", "description": "에이전트 정의 파일(T36)의 id와 판" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["llm", "llm+script"] } }, "required": ["kind"] },
+          "then": { "required": ["kind", "name", "version", "model_id", "prompt_id"] }
+        }
+      ]
+    },
+
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "base_revision"],
+      "properties": {
+        "kind": {
+          "enum": ["workflow", "ditamap", "topicset", "build", "deliverable", "glossary"],
+          "description": "검증 대상 종류. 4번은 workflow, 10·11·12·13·15번은 topicset 또는 ditamap, 14번은 build, 18번 산출물 확인은 deliverable"
+        },
+        "files": {
+          "type": "array", "items": { "type": "string" },
+          "description": "대상 파일 경로 목록. 프로젝트 폴더 기준 상대 경로. 마스킹 사본에서는 가명으로 바뀐다."
+        },
+        "base_revision": {
+          "type": "string", "pattern": "^[0-9a-f]{12}$",
+          "description": "대상 집합의 sha256 앞 12자리. 리포트가 다른 판에 잘못 적용되는 것을 막는다 (6번 검토 의견 양식과 같은 방식)."
+        }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "warning", "info", "accepted_warning", "checked"],
+      "properties": {
+        "error": { "type": "integer", "minimum": 0, "description": "accepted=false인 error 건수. 반복 종료 판정에 쓰는 값" },
+        "warning": { "type": "integer", "minimum": 0 },
+        "info": { "type": "integer", "minimum": 0 },
+        "accepted_warning": {
+          "type": "integer", "minimum": 0,
+          "description": "16번에서 허용한 건수. wf:errorCountingRule — 허용한 경고는 오류로 세지 않는다."
+        },
+        "checked": { "type": "integer", "minimum": 0, "description": "검사한 단위 수 (파일 수 또는 규칙 수)" },
+        "skipped": { "type": "integer", "minimum": 0, "default": 0 }
+      }
+    },
+
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+
+    "skipped_items": {
+      "type": "array",
+      "description": "생략 규칙(wf:SkipRule)으로 검사하지 않은 대상. 11번 실패 → 12·13번 생략(파일 단위), 11 또는 12번 실패 → 14번 생략(전체 빌드)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item", "reason", "triggered_by_step"],
+        "properties": {
+          "item": { "type": "string" },
+          "reason": { "type": "string" },
+          "triggered_by_step": { "type": "integer", "minimum": 1, "maximum": 19 },
+          "scope": { "enum": ["파일 단위", "전체 빌드"] }
+        }
+      }
+    },
+
+    "masking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applied"],
+      "description": "LLM에 넘기는 사본에만 채운다. 가명 대응표는 로컬에만 두고 리포트에 넣지 않는다.",
+      "properties": {
+        "applied": { "type": "boolean", "default": false },
+        "map_ref": { "type": "string", "description": "로컬 가명 대응표 파일 경로. 외부 전송 사본에서는 비운다." },
+        "blocked_term_hit": { "type": "boolean", "default": false, "description": "true면 전송을 중단한다 (fail-closed)" },
+        "fields_removed": { "type": "array", "items": { "type": "string" }, "description": "사본에서 지운 필드 경로. 예: findings[].evidence.quote" }
+      }
+    },
+
+    "notes": { "type": "string" }
+  },
+
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding_id", "severity", "rule_id", "rule_source", "message", "location"],
+      "properties": {
+        "finding_id": { "type": "string", "pattern": "^f[0-9]{4}$", "description": "리포트 안에서만 유일. 16번 수정 지시서(T21)가 이 값으로 대상을 지정한다." },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "rule_id": {
+          "type": "string", "minLength": 1,
+          "description": "규칙 식별자. shacl은 R1~R8, project는 P0~P6, schematron은 규칙 YAML의 id, dita-ot은 메시지 ID(예: DOTJ012E), glossary·checklist는 항목 id"
+        },
+        "rule_source": {
+          "enum": ["shacl", "project", "xml", "dita", "schematron", "dita-ot", "link", "glossary", "checklist", "llm"],
+          "description": "규칙 출처. llm은 15번 내용 검증의 판단형 항목에만 쓰고, 근거를 evidence.source_ref에 남긴다."
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "description": "최소 한 항목은 있어야 한다. 파일 단위 생략 규칙이 file로 판단하므로 파일 대상 검사는 file을 반드시 채운다.",
+          "properties": {
+            "file": { "type": "string" },
+            "line": { "type": "integer", "minimum": 1 },
+            "column": { "type": "integer", "minimum": 1 },
+            "xpath": { "type": "string" },
+            "element": { "type": "string" },
+            "topic_id": { "type": "string" },
+            "step": { "type": "integer", "minimum": 1, "maximum": 19, "description": "4번 워크플로우 검증처럼 대상이 단계일 때" },
+            "node": { "type": "string", "description": "RDF 노드 이름. 예: wf:step08" }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "근거. 본문 인용(quote)은 여기에만 두어 마스킹 대상을 한곳에 모은다.",
+          "properties": {
+            "expected": { "type": "string" },
+            "actual": { "type": "string" },
+            "source_ref": { "type": "string", "description": "근거 자료 참조. 예: spec-a200.yaml#ac_input_voltage, glossary.yaml#t012" },
+            "quote": { "type": "string", "description": "원고 인용. 외부 전송 사본에서는 반드시 지운다." }
+          }
+        },
+        "suggested_action": { "type": "string", "description": "스크립트가 기계적으로 고칠 수 있는 항목만 채운다. 내용 수정은 16번 지시가 있을 때만 17번이 적용한다." },
+        "auto_fixable": { "type": "boolean", "default": false },
+        "accepted": { "type": "boolean", "default": false, "description": "16번에서 허용한 항목 (CQ-C7)" },
+        "accepted_by": { "type": "string" },
+        "accepted_on": { "type": "string", "format": "date" },
+        "accept_reason": { "type": "string" },
+        "fix_status": { "enum": ["open", "fixed", "accepted", "deferred"], "default": "open" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "accepted": { "const": true } }, "required": ["accepted"] },
+          "then": { "required": ["accepted_by", "accepted_on", "accept_reason"] }
+        }
+      ]
+    }
+  }
+}

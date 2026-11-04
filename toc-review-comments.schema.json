@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/dita-wf/schemas/toc-review-comments.schema.json",
+  "title": "T09 목차 검토 의견 (toc-review-comments.yaml)",
+  "description": "7번 목차 승인과 16번 목차 변경 의견이 6번 수정 모드로 넘기는 의견. 양식: Agent_test/temlate/toc-review-comments.yaml (2026-11-04)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "review", "comments"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin", "map_file", "base_revision", "reviewer", "reviewed_on", "decision", "toc_return_count"],
+      "properties": {
+        "origin": { "enum": ["step7", "step16"] },
+        "map_file": { "type": "string", "pattern": "\\.ditamap$" },
+        "base_revision": { "type": "string", "pattern": "^[0-9a-f]{12}$", "description": "검토한 ditamap의 sha256 앞 12자리" },
+        "reviewer": { "type": "string", "minLength": 1, "not": { "pattern": "^\\[TBD" } },
+        "reviewed_on": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "decision": { "enum": ["approved", "changes_requested", "rejected"] },
+        "toc_return_count": { "type": ["integer", "null"] },
+        "related_findings": { "type": "array", "items": { "type": "string", "pattern": "^report-\\d{2}-i\\d+\\.json#f\\d{4}$" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "origin": { "const": "step16" } } },
+          "then": {
+            "properties": {
+              "decision": { "const": "changes_requested" },
+              "toc_return_count": { "type": "integer", "minimum": 1, "maximum": 2 }
+            }
+          },
+          "else": { "properties": { "toc_return_count": { "type": "null" } } }
+        }
+      ]
+    },
+    "comments": { "type": "array", "items": { "$ref": "#/$defs/comment" } }
+  },
+  "allOf": [
+    {
+      "description": "16번 복귀는 제목 동기화만 실행하므로 rename·note만 허용 (기본값)",
+      "if": { "properties": { "review": { "properties": { "origin": { "const": "step16" } } } } },
+      "then": {
+        "properties": { "comments": { "minItems": 1, "contains": { "properties": { "action": { "const": "rename" } } },
+                                      "items": { "properties": { "action": { "enum": ["rename", "note"] } } } } }
+      }
+    },
+    {
+      "description": "승인이면 맵을 바꾸는 의견을 둘 수 없음",
+      "if": { "properties": { "review": { "properties": { "decision": { "const": "approved" } } } } },
+      "then": { "properties": { "comments": { "items": { "properties": { "action": { "enum": ["answer", "note"] } } } } } }
+    },
+    {
+      "description": "수정 요청이면 맵을 바꾸는 의견이 1건 이상",
+      "if": { "properties": { "review": { "properties": { "decision": { "const": "changes_requested" } } } } },
+      "then": { "properties": { "comments": { "contains": { "properties": { "action": { "enum": ["rename", "add", "delete", "move", "retype"] } } } } } }
+    }
+  ],
+  "$defs": {
+    "topic_id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$", "description": "파일 이름에서 .dita를 뺀 것. 예: t_install-anchor" },
+    "parent_id": { "anyOf": [ { "$ref": "#/$defs/topic_id" }, { "const": "(root)" } ] },
+    "title": { "type": "string", "minLength": 1, "not": { "pattern": "^\\s|\\s$|^\\d+(\\.\\d+)*\\.?\\s" }, "description": "앞뒤 공백·장절 번호 금지 (번호는 출판 시 DITA-OT가 붙임)" },
+    "reason": { "type": "string", "minLength": 1, "pattern": "\\S" },
+    "comment": {
+      "type": "object",
+      "required": ["id", "action"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^R\\d{2,3}$" },
+        "action": { "enum": ["rename", "add", "delete", "move", "retype", "answer", "note"] }
+      },
+      "oneOf": [
+        { "additionalProperties": false, "required": ["id", "action", "target", "new_title", "reason"],
+          "properties": { "id": true, "action": { "const": "rename" }, "target": { "$ref": "#/$defs/topic_id" },
+                          "new_title": { "$ref": "#/$defs/title" }, "reason": { "$ref": "#/$defs/reason" } } },
+        { "additionalProperties": false, "required": ["id", "action", "new_title", "topic_type", "parent", "after", "reason"],
+          "properties": { "id": true, "action": { "const": "add" }, "new_title": { "$ref": "#/$defs/title" },
+                          "topic_type": { "enum": ["concept", "task", "reference"] }, "parent": { "$ref": "#/$defs/parent_id" },
+                          "after": { "anyOf": [ { "$ref": "#/$defs/topic_id" }, { "type": "null" } ] }, "reason": { "$ref": "#/$defs/reason" } } },
+        { "additionalProperties": false, "required": ["id", "action", "target", "cascade", "reason"],
+          "properties": { "id": true, "action": { "const": "delete" }, "target": { "$ref": "#/$defs/topic_id" },
+                          "cascade": { "type": "boolean" }, "reason": { "$ref": "#/$defs/reason" } } },
+        { "additionalProperties": false, "required": ["id", "action", "target", "parent", "after", "reason"],
+          "properties": { "id": true, "action": { "const": "move" }, "target": { "$ref": "#/$defs/topic_id" },
+                          "parent": { "$ref": "#/$defs/parent_id" }, "after": { "anyOf": [ { "$ref": "#/$defs/topic_id" }, { "type": "null" } ] },
+                          "reason": { "$ref": "#/$defs/reason" } } },
+        { "additionalProperties": false, "required": ["id", "action", "target", "topic_type", "reason"],
+          "properties": { "id": true, "action": { "const": "retype" }, "target": { "$ref": "#/$defs/topic_id" },
+                          "topic_type": { "enum": ["concept", "task", "reference"] }, "reason": { "$ref": "#/$defs/reason" } } },
+        { "additionalProperties": false, "required": ["id", "action", "question", "answer", "applies", "reason"],
+          "properties": { "id": true, "action": { "const": "answer" }, "question": { "type": "string", "pattern": "^Q\\d+$" },
+                          "answer": { "type": "string", "minLength": 1 }, "applies": { "type": "array", "items": { "type": "string", "pattern": "^R\\d{2,3}$" } },
+                          "reason": { "$ref": "#/$defs/reason" } } },
+        { "additionalProperties": false, "required": ["id", "action", "text"],
+          "properties": { "id": true, "action": { "const": "note" }, "text": { "type": "string", "minLength": 1 } } }
+      ]
+    }
+  }
+}
